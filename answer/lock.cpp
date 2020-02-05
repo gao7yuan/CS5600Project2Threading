@@ -10,24 +10,28 @@
 #pragma region Lock Callbacks
 
 void lockCreated(const char *lockId) {
-    PUT_IN_MAP(const char*, lockThreadMap, lockId, NULL); // initialize, inform this lock exists and no one uses it
+    // initialize, inform this lock exists and no one uses it
+    PUT_IN_MAP(const char*, sharedLockThreadMap, lockId, NULL);
 }
 
 void lockAttempted(const char *lockId, Thread *thread) {
     Thread* lockHolder = getThreadHoldingLock(lockId);
     if (lockHolder != NULL && lockHolder->priority < thread->priority) {
+        // priority donation
         lockHolder->priority = thread->priority;
     }
 }
 
 void lockAcquired(const char *lockId, Thread *thread) {
-    PUT_IN_MAP(const char*, lockThreadMap, lockId, (void*) thread);
+    PUT_IN_MAP(const char*, sharedLockThreadMap, lockId, (void*) thread);
 }
 
 void lockFailed(const char *lockId, Thread *thread) {}
 
 void lockReleased(const char *lockId, Thread *thread) {
-    PUT_IN_MAP(const char*, lockThreadMap, lockId, NULL);
+    // priority inversion
+    thread->priority = thread->originalPriority;
+    PUT_IN_MAP(const char*, sharedLockThreadMap, lockId, NULL);
 }
 
 #pragma endregion
@@ -35,8 +39,7 @@ void lockReleased(const char *lockId, Thread *thread) {
 #pragma region Lock Functions
 
 Thread *getThreadHoldingLock(const char *lockId) {
-    Thread *ret = (Thread*)GET_FROM_MAP(const char*, lockThreadMap, lockId);
-    return ret;
+    return (Thread *) GET_FROM_MAP(const char*, sharedLockThreadMap, lockId);
 }
 
 #pragma endregion

@@ -14,6 +14,6 @@
 
 // Now both lock.cpp and thread.cpp may refer to sharedMap.
 
-extern const char* lockThreadMap;
+extern const char* sharedLockThreadMap;
 
 #endif
