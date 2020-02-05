@@ -1,6 +1,7 @@
 #include "Lock.h"
 #include <stddef.h>
 #include "thread_lock.h"
+#include "Map.h"
 
 // See os_simulator/includes/Lock.student.h for explanations of these functions
 // Not all of these functions must be implemented
@@ -26,7 +27,7 @@ void lockAcquired(const char *lockId, Thread *thread) {
 void lockFailed(const char *lockId, Thread *thread) {}
 
 void lockReleased(const char *lockId, Thread *thread) {
-    PUT_IN_MAP(const char*, sharedLockMap, lockId, NULL);
+    PUT_IN_MAP(const char*, lockThreadMap, lockId, NULL);
 }
 
 #pragma endregion
