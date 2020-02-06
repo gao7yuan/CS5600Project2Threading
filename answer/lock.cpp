@@ -1,16 +1,16 @@
 #include "Lock.h"
 #include <stddef.h>
-#include "thread_lock.h"
 #include "Map.h"
+#include "thread_lock.h"
 
 #pragma region Lock Callbacks
 
-void lockCreated(const char *lockId) {
+void lockCreated(const char* lockId) {
     // initialize, inform this lock exists and no one uses it
-    PUT_IN_MAP(const char *, sharedLockThreadMap, lockId, NULL);
+    PUT_IN_MAP(const char*, sharedLockThreadMap, lockId, NULL);
 }
 
-void lockAttempted(const char *lockId, Thread *thread) {
+void lockAttempted(const char* lockId, Thread* thread) {
     Thread* lockHolder = getThreadHoldingLock(lockId);
     if (lockHolder != NULL && lockHolder->priority < thread->priority) {
         // priority donation
@@ -18,24 +18,24 @@ void lockAttempted(const char *lockId, Thread *thread) {
     }
 }
 
-void lockAcquired(const char *lockId, Thread *thread) {
-    PUT_IN_MAP(const char *, sharedLockThreadMap, lockId, (void*) thread);
+void lockAcquired(const char* lockId, Thread* thread) {
+    PUT_IN_MAP(const char*, sharedLockThreadMap, lockId, (void*)thread);
 }
 
-void lockFailed(const char *lockId, Thread *thread) {}
+void lockFailed(const char* lockId, Thread* thread) {}
 
-void lockReleased(const char *lockId, Thread *thread) {
+void lockReleased(const char* lockId, Thread* thread) {
     // priority inversion
     thread->priority = thread->originalPriority;
-    PUT_IN_MAP(const char *, sharedLockThreadMap, lockId, NULL);
+    PUT_IN_MAP(const char*, sharedLockThreadMap, lockId, NULL);
 }
 
 #pragma endregion
 
 #pragma region Lock Functions
 
-Thread *getThreadHoldingLock(const char *lockId) {
-    return (Thread *) GET_FROM_MAP(const char *, sharedLockThreadMap, lockId);
+Thread* getThreadHoldingLock(const char* lockId) {
+    return (Thread*)GET_FROM_MAP(const char*, sharedLockThreadMap, lockId);
 }
 
 #pragma endregion
