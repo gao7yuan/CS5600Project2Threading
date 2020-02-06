@@ -10,7 +10,7 @@
 #include "thread_lock.h"
 
 const char* readyList =
-    NULL;  // stores threads that are not sleeping and ready for execution
+        NULL;  // stores threads that are not sleeping and ready for execution
 const char* sleepList = NULL;            // stores threads that are sleeping
 const char* sleepThreadMap = NULL;       // stores thread -> wakeTick pairs
 const char* sharedLockThreadMap = NULL;  // stores lock -> thread pairs
@@ -44,6 +44,10 @@ Thread* createAndSetThreadToRun(const char* name,
 }
 
 void destroyThread(Thread* thread) {
+    char line[1024];
+    sprintf(line, "[destroyThread] destroying thread with name %s\n",
+            thread->name);
+    verboseLog(line);
     free(thread->name);
     free(thread);
 }
@@ -91,7 +95,7 @@ int tickSleep(int numTicks) {
     int startTick, wakeTick;
 
     startTick =
-        getCurrentTick();  // start tick is the tick when the function is called
+            getCurrentTick();  // start tick is the tick when the function is called
     wakeTick = startTick + numTicks;  // wake tick is calculated
 
     // find current thread
@@ -193,7 +197,7 @@ Thread* findThreadToRun() {
             cur = (Thread*)listGet(readyList, i);
             if (cur->priority > ret->priority ||
                 cur->priority == ret->priority &&
-                    cur->originalPriority < ret->originalPriority) {
+                cur->originalPriority < ret->originalPriority) {
                 // if we find a thread with higher priority, or
                 // if we find a thread with same priority, but lower original
                 // priority, we know that a higher priority thread just donated
