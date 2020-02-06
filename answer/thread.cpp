@@ -13,23 +13,17 @@
 const char *readyList = NULL; // stores threads that are not sleeping and ready for execution
 const char *sleepList = NULL; // stores threads that are sleeping
 const char *sleepThreadMap = NULL; // stores thread -> wakeTick pairs
-const char *sharedLockThreadMap = NULL;
+const char *sharedLockThreadMap = NULL; // stores lock -> thread pairs
 
+/*
+ * Function prototypes
+ */
 
-// * Compare two threads for sorting. Return true if t1 is considered smaller and false otherwise.
-// * Specifically, if t1 is sleeping and should be waken up, it should be put into the head of ready list.
-// * Otherwise, if it should still be sleeping, it should be placed at the end of ready list, so it returns false.
-// * If t1 and t2 have the same priority, we should compare their original priority.
-// * The one with lower original priority should go first because of the purpose of priority donation.
-// * If t1 and t2 have different priorities, then the one with higher priority should go first.
-// * @param t1 the first thread.
-// * @param t2 the second thread.
-// * @return true if t1 should go to the front of the ready list and false otherwise.
-// */
-//bool comparator(void *t1, void *t2);
-
+// move threads in sleep list that are supposed to wake up to ready list
 void updateReadyAndSleepLists();
+// from sleep list, find the thread with smallest wakeTick
 Thread* findEarliestWakeUpThread();
+// from ready list, find the next thread to run considering their priorities
 Thread* findThreadToRun();
 
 Thread *createAndSetThreadToRun(const char *name,
@@ -59,14 +53,14 @@ Thread *nextThreadToRun(int currentTick) {
     if (listSize(readyList) == 0)
         return NULL;
     Thread *ret = NULL;
+    // move threads in sleep list that are supposed to be waken up to ready list
     updateReadyAndSleepLists();
     do {
         int threadIndex = 0;
         sprintf(line, "[nextThreadToRun] trying thread index %d\n",
                 threadIndex);
         verboseLog(line);
-//        ret = ((Thread *) listGet(readyList, threadIndex));
-//        updateReadyAndSleepLists(); // move threads that should be waken up from sleep list to ready list
+        // find next thread to run from ready list according to certain ordering of priority
         ret = findThreadToRun();
         if (ret->state == TERMINATED) {
             sprintf(line, "[nextThreadToRun] thread %d was terminated\n",
@@ -89,6 +83,7 @@ void initializeCallback() {
 
 void shutdownCallback() {
     destroyList(readyList);
+    destroyList(sleepList);
 }
 
 int tickSleep(int numTicks) {
@@ -100,8 +95,7 @@ int tickSleep(int numTicks) {
     // find current thread
     Thread *curThread = getCurrentThread();
 
-//    stopExecutingThreadForCycle();
-
+    // stop executing until reach wake tick
     while (getCurrentTick() < wakeTick) {
         stopExecutingThreadForCycle();
     }
@@ -112,11 +106,6 @@ int tickSleep(int numTicks) {
     addToList(sleepList, (void *) curThread);
     // add <curThread, wakeTick> to sleepThreadMap
     PUT_IN_MAP(Thread * , sleepThreadMap, curThread, (void *) &wakeTick);
-//    stopExecutingThreadForCycle();
-//    // stop executing this thread
-//    while (getCurrentTick() < wakeTick) {
-//        stopExecutingThreadForCycle();
-//    }
 
     return startTick;
 }
@@ -156,6 +145,7 @@ void updateReadyAndSleepLists() {
  * From sleepList, find the thread with the earliest wakeTick.
  * @return the thread with the earliest wakeTick or NULL if sleepList is empty.
  */
+
 Thread* findEarliestWakeUpThread() {
     Thread* ret = NULL; // to record the thread with earliest wake tick
     Thread* cur = NULL; // to traverse sleep list
@@ -164,14 +154,15 @@ Thread* findEarliestWakeUpThread() {
     int sleepCnt = listSize(sleepList); // number of threads sleeping
     if (sleepCnt > 0) {
         ret = (Thread *) listGet(sleepList, 0); // get the first thread in sleep list
+        earliestWakeTick = (int *) GET_FROM_MAP(Thread *, sleepThreadMap, ret);
         // traverse the rest of the list to find earliest thread to wake up
         for (int i = 1; i < sleepCnt; i++) {
             cur = (Thread *) listGet(sleepList, i);
+            curWakeTick = (int *) GET_FROM_MAP(Thread *, sleepThreadMap, cur);
             // if we find a thread with an earlier wakeTick, update ret
-            earliestWakeTick = (int *) GET_FROM_MAP(Thread*, sleepThreadMap, ret);
-            curWakeTick = (int *) GET_FROM_MAP(Thread*, sleepThreadMap, cur);
             if (*curWakeTick < *earliestWakeTick) {
                 ret = cur;
+                earliestWakeTick = curWakeTick;
             }
         }
     }
@@ -184,6 +175,7 @@ Thread* findEarliestWakeUpThread() {
  * lock.
  * @return the thread to run next or NULL if ready list is empty.
  */
+
 Thread* findThreadToRun() {
     Thread* ret = NULL; // to record thread to run
     Thread* cur = NULL; // to traverse ready list
@@ -207,31 +199,3 @@ Thread* findThreadToRun() {
     }
     return ret;
 }
-
-//bool comparator(void *t1, void *t2) {
-//    Thread *thread1 = (Thread *) t1;
-//    Thread *thread2 = (Thread *) t2;
-//    // check whether thread 1 is sleeping or not
-//    bool t1Sleeping = MAP_CONTAINS(Thread*, sleepThreadMap, thread1);
-//    if (t1Sleeping) {
-//        // if t1 is sleeping, check whether it should be waken up
-//        int* endTickPtr = (int*)GET_FROM_MAP(Thread*, sleepThreadMap, thread1);
-//        if (*endTickPtr == getCurrentTick()) {
-//            // remove t1 from sleeping map and put it in front of list
-//            REMOVE_FROM_MAP(Thread*, sleepThreadMap, thread1);
-//            return true;
-//        } else {
-//            // put it at end of list
-//            return false;
-//        }
-//    } else {
-//        if (thread1->priority != thread2->priority) {
-//            // if t1 and t2 have different priorities, put the one with higher priority closer to head
-//            return thread1->priority > thread2->priority;
-//        } else {
-//            // if t1 and t2 have the same priority, put the one with lower original priority close to head
-//            // for the purpose of priority donation
-//            return thread1->originalPriority < thread2->originalPriority;
-//        }
-//    }
-//}
