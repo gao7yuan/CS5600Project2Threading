@@ -1,5 +1,6 @@
 #include "Lock.h"
 #include <stddef.h>
+#include <string.h>
 #include "Map.h"
 #include "thread_lock.h"
 
@@ -11,22 +12,44 @@ void lockCreated(const char* lockId) {
 }
 
 void lockAttempted(const char* lockId, Thread* thread) {
-    Thread* lockHolder = getThreadHoldingLock(lockId);
-    if (lockHolder != NULL && lockHolder->priority < thread->priority) {
-        // priority donation
-        lockHolder->priority = thread->priority;
-    }
+    // inform scheduler that this thread has attempted this lock
+    // store [thread -> attempt lock] pairs into map for scheduler to track
+    PUT_IN_MAP(Thread*, sharedLockAttemptMap, thread, (void*)lockId);
 }
 
 void lockAcquired(const char* lockId, Thread* thread) {
+    // if this thread has attempted this lock before, remove the record from
+    // sharedLockAttemptMap
+    bool isAttemptingLock = MAP_CONTAINS(Thread*, sharedLockAttemptMap, thread);
+    if (isAttemptingLock) {
+        char* attemptedLockId =
+            (char*)GET_FROM_MAP(Thread*, sharedLockAttemptMap, thread);
+        if (strcmp(lockId, attemptedLockId) == 0) {
+            REMOVE_FROM_MAP(Thread*, sharedLockAttemptMap, thread);
+        }
+    }
+    // update sharedLockThreadMap with this thread
     PUT_IN_MAP(const char*, sharedLockThreadMap, lockId, (void*)thread);
 }
 
-void lockFailed(const char* lockId, Thread* thread) {}
+void lockFailed(const char* lockId, Thread* thread) {
+    // inform that this lock is gone
+    REMOVE_FROM_MAP(const char*, sharedLockThreadMap, lockId);
+    // no threads attempt this lock any more
+    bool isAttemptingLock = MAP_CONTAINS(Thread*, sharedLockAttemptMap, thread);
+    if (isAttemptingLock) {
+        char* attemptedLockId =
+            (char*)GET_FROM_MAP(Thread*, sharedLockAttemptMap, thread);
+        if (strcmp(lockId, attemptedLockId) == 0) {
+            REMOVE_FROM_MAP(Thread*, sharedLockAttemptMap, thread);
+        }
+    }
+}
 
 void lockReleased(const char* lockId, Thread* thread) {
     // priority inversion
     thread->priority = thread->originalPriority;
+    // restore initial value for lock in sharedLockThreadMap
     PUT_IN_MAP(const char*, sharedLockThreadMap, lockId, NULL);
 }
 

@@ -10,10 +10,11 @@
 #include "thread_lock.h"
 
 const char* readyList =
-        NULL;  // stores threads that are not sleeping and ready for execution
-const char* sleepList = NULL;            // stores threads that are sleeping
-const char* sleepThreadMap = NULL;       // stores thread -> wakeTick pairs
-const char* sharedLockThreadMap = NULL;  // stores lock -> thread pairs
+    NULL;  // stores threads that are not sleeping and ready for execution
+const char* sleepList = NULL;             // stores threads that are sleeping
+const char* sleepThreadMap = NULL;        // stores thread -> wakeTick pairs
+const char* sharedLockThreadMap = NULL;   // stores lock -> thread pairs
+const char* sharedLockAttemptMap = NULL;  // stores thread -> attempt lock pairs
 
 /*
  * Function prototypes
@@ -21,10 +22,18 @@ const char* sharedLockThreadMap = NULL;  // stores lock -> thread pairs
 
 // move threads in sleep list that are supposed to wake up to ready list
 void updateReadyAndSleepLists();
+
 // from sleep list, find the thread with smallest wakeTick
 Thread* findEarliestWakeUpThread();
+
 // from ready list, find the next thread to run considering their priorities
 Thread* findThreadToRun();
+
+// given a thread, insert it to ready list, making ready list a priority queue
+// make sure it inserts after the last thread with same priority
+void insertToReadyList(Thread*);
+
+
 
 Thread* createAndSetThreadToRun(const char* name,
                                 void* (*func)(void*),
@@ -39,7 +48,8 @@ Thread* createAndSetThreadToRun(const char* name,
     ret->originalPriority = pri;
 
     createThread(ret);
-    addToList(readyList, (void*)ret);
+    //    addToList(readyList, (void*)ret);
+    insertToReadyList(ret);
     return ret;
 }
 
@@ -84,6 +94,7 @@ void initializeCallback() {
     sleepList = createNewList();
     sleepThreadMap = CREATE_MAP(Thread*);
     sharedLockThreadMap = CREATE_MAP(const char*);  // lock -> thread
+    sharedLockAttemptMap = CREATE_MAP(Thread*);     // thread -> attempt lock
 }
 
 void shutdownCallback() {
@@ -95,16 +106,16 @@ int tickSleep(int numTicks) {
     int startTick, wakeTick;
 
     startTick =
-            getCurrentTick();  // start tick is the tick when the function is called
+        getCurrentTick();  // start tick is the tick when the function is called
     wakeTick = startTick + numTicks;  // wake tick is calculated
 
     // find current thread
     Thread* curThread = getCurrentThread();
 
-    // stop executing until reach wake tick
-    while (getCurrentTick() < wakeTick) {
-        stopExecutingThreadForCycle();
-    }
+    //    // stop executing until reach wake tick
+    //    while (getCurrentTick() < wakeTick) {
+    //        stopExecutingThreadForCycle();
+    //    }
 
     // remove thread from ready list
     removeFromList(readyList, (void*)curThread);
@@ -113,11 +124,34 @@ int tickSleep(int numTicks) {
     // add <curThread, wakeTick> to sleepThreadMap
     PUT_IN_MAP(Thread*, sleepThreadMap, curThread, (void*)&wakeTick);
 
+    // stop executing
+    stopExecutingThreadForCycle();
+
     return startTick;
 }
 
 void setMyPriority(int priority) {
     getCurrentThread()->priority = priority;
+}
+
+/**
+ * Given a thread, insert this thread into ready list in desired order, making
+ * ready list a priority queue, while keeping the order of insertion if two
+ * threads have the same priority.
+ * @param thread
+ */
+
+void insertToReadyList(Thread* thread) {
+    int threadIndex = 0;
+    Thread* curThread = NULL;
+    while (threadIndex < listSize(readyList)) {
+        curThread = (Thread*)listGet(readyList, threadIndex);
+        if (thread->priority > curThread->priority) {
+            break;
+        }
+        threadIndex++;
+    }
+    addToListAtIndex(readyList, threadIndex, (void*)thread);
 }
 
 /**
@@ -138,7 +172,8 @@ void updateReadyAndSleepLists() {
             // should wake up this thread
             // remove it from sleep list and sleep map and add it to ready list
             removeFromList(sleepList, (void*)candidate);
-            addToList(readyList, (void*)candidate);
+            //            addToList(readyList, (void*)candidate);
+            insertToReadyList(candidate);
             REMOVE_FROM_MAP(Thread*, sleepThreadMap, candidate);
             sleepCnt--;
         } else {
@@ -187,25 +222,32 @@ Thread* findEarliestWakeUpThread() {
 
 Thread* findThreadToRun() {
     Thread* ret = NULL;  // to record thread to run
-    Thread* cur = NULL;  // to traverse ready list
-    int readyCnt = listSize(readyList);
-    if (readyCnt > 0) {
-        ret = (Thread*)listGet(readyList,
-                               0);  // get the first thread in ready list
-        // traverse the rest of the list to find the thread to run
-        for (int i = 1; i < readyCnt; i++) {
-            cur = (Thread*)listGet(readyList, i);
-            if (cur->priority > ret->priority ||
-                cur->priority == ret->priority &&
-                cur->originalPriority < ret->originalPriority) {
-                // if we find a thread with higher priority, or
-                // if we find a thread with same priority, but lower original
-                // priority, we know that a higher priority thread just donated
-                // priority to this thread in order to have the lock released,
-                // so we should run this thread instead update ret
-                ret = cur;
+    if (listSize(readyList) <= 0) {
+        return ret;
+    }
+    ret = (Thread*)listGet(readyList, 0);  // get first thread in ready list
+    // if this thread has attempted a lock
+    bool isAttemptingLock = MAP_CONTAINS(Thread*, sharedLockAttemptMap, ret);
+    if (isAttemptingLock) {
+        const char* attemptLock =
+            (const char*)GET_FROM_MAP(Thread*, sharedLockAttemptMap, ret);
+        // if the lock of attempting is held by another thread, find the lock
+        // holder
+        bool isHeld = MAP_CONTAINS(const char*, sharedLockThreadMap, attemptLock);
+        if (isHeld) {
+            Thread* lockHolder =
+                (Thread*)GET_FROM_MAP(const char*, sharedLockThreadMap, attemptLock);
+            // if lock holder has a lower priority, do priority donation
+            if (lockHolder != NULL && lockHolder != ret &&
+                lockHolder->priority < ret->priority) {
+                lockHolder->priority = ret->priority;  // priority donation
+                ret = lockHolder;  // next tick let's run this lock holder
             }
         }
     }
+    // for round-robin
+    removeFromList(readyList, (void*)ret);
+    insertToReadyList(ret);
+
     return ret;
 }
