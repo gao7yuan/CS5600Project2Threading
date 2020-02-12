@@ -64,11 +64,14 @@ void destroyThread(Thread* thread) {
 
 Thread* nextThreadToRun(int currentTick) {
     char line[1024];
+    sprintf(line, "[nextThreadToRun] current tick is %d", getCurrentTick());
+    sprintf(line, "[nextThreadToRun] current ready list size is %d", listSize(readyList));
     if (listSize(readyList) == 0)
         return NULL;
     Thread* ret = NULL;
     // move threads in sleep list that are supposed to be waken up to ready list
     updateReadyAndSleepLists();
+
     do {
         int threadIndex = 0;
         sprintf(line, "[nextThreadToRun] trying thread index %d\n",
@@ -161,6 +164,7 @@ void insertToReadyList(Thread* thread) {
  */
 
 void updateReadyAndSleepLists() {
+    char buffer[1024];
     int sleepCnt = listSize(sleepList);
     Thread* candidate = NULL;
     int* wakeTick = NULL;
@@ -172,6 +176,7 @@ void updateReadyAndSleepLists() {
             // should wake up this thread
             // remove it from sleep list and sleep map and add it to ready list
             removeFromList(sleepList, (void*)candidate);
+            sprintf(buffer, "[update ready list] waking up thread %s", candidate->name);
             //            addToList(readyList, (void*)candidate);
             insertToReadyList(candidate);
             REMOVE_FROM_MAP(Thread*, sleepThreadMap, candidate);
