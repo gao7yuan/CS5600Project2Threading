@@ -10,7 +10,7 @@
 #include "thread_lock.h"
 
 const char* readyList =
-    NULL;  // stores threads that are not sleeping and ready for execution
+        NULL;  // stores threads that are not sleeping and ready for execution
 const char* sleepList = NULL;             // stores threads that are sleeping
 const char* sleepThreadMap = NULL;        // stores thread -> wakeTick pairs
 const char* sharedLockThreadMap = NULL;   // stores lock -> thread pairs
@@ -32,6 +32,10 @@ Thread* findThreadToRun();
 // given a thread, insert it to ready list, making ready list a priority queue
 // make sure it inserts after the last thread with same priority
 void insertToReadyList(Thread*);
+
+// given a thread, insert it to sleep list, making thread with earlier wake tick closer to head
+// if two threads have the same wake tick, the one with higher priority goes first
+void insertToSleepList(Thread*);
 
 
 
@@ -66,11 +70,12 @@ Thread* nextThreadToRun(int currentTick) {
     char line[1024];
     sprintf(line, "[nextThreadToRun] current tick is %d", getCurrentTick());
     sprintf(line, "[nextThreadToRun] current ready list size is %d", listSize(readyList));
+    updateReadyAndSleepLists();
     if (listSize(readyList) == 0)
         return NULL;
     Thread* ret = NULL;
     // move threads in sleep list that are supposed to be waken up to ready list
-    updateReadyAndSleepLists();
+
 
     do {
         int threadIndex = 0;
@@ -109,7 +114,7 @@ int tickSleep(int numTicks) {
     int startTick, wakeTick;
 
     startTick =
-        getCurrentTick();  // start tick is the tick when the function is called
+            getCurrentTick();  // start tick is the tick when the function is called
     wakeTick = startTick + numTicks;  // wake tick is calculated
 
     // find current thread
@@ -157,6 +162,22 @@ void insertToReadyList(Thread* thread) {
     addToListAtIndex(readyList, threadIndex, (void*)thread);
 }
 
+void insertToSleepList(Thread * thread) {
+    int * wakeTick = (int *) GET_FROM_MAP(Thread *, sleepThreadMap, thread);
+    int threadIndex = 0;
+    Thread *curThread = NULL;
+    int *curWakeTick = NULL;
+    while (threadIndex < listSize(sleepList)) {
+        curThread = (Thread *) listGet(sleepList, threadIndex);
+        curWakeTick = (int*) GET_FROM_MAP(Thread *, sleepThreadMap, curThread);
+        if (*wakeTick < *curWakeTick || *wakeTick == *curWakeTick && thread->priority > curThread->priority) {
+            break;
+        }
+        threadIndex++;
+    }
+    addToListAtIndex(sleepList, threadIndex, (void *) thread);
+}
+
 /**
  * Update ready and sleep lists.
  * Find all the threads in sleep list that should be waken up. Remove them from
@@ -195,24 +216,27 @@ void updateReadyAndSleepLists() {
 
 Thread* findEarliestWakeUpThread() {
     Thread* ret = NULL;  // to record the thread with earliest wake tick
-    Thread* cur = NULL;  // to traverse sleep list
-    int* earliestWakeTick = NULL;
-    int* curWakeTick = NULL;
-    int sleepCnt = listSize(sleepList);  // number of threads sleeping
-    if (sleepCnt > 0) {
-        ret = (Thread*)listGet(sleepList,
-                               0);  // get the first thread in sleep list
-        earliestWakeTick = (int*)GET_FROM_MAP(Thread*, sleepThreadMap, ret);
-        // traverse the rest of the list to find earliest thread to wake up
-        for (int i = 1; i < sleepCnt; i++) {
-            cur = (Thread*)listGet(sleepList, i);
-            curWakeTick = (int*)GET_FROM_MAP(Thread*, sleepThreadMap, cur);
-            // if we find a thread with an earlier wakeTick, update ret
-            if (*curWakeTick < *earliestWakeTick) {
-                ret = cur;
-                earliestWakeTick = curWakeTick;
-            }
-        }
+//    Thread* cur = NULL;  // to traverse sleep list
+//    int* earliestWakeTick = NULL;
+//    int* curWakeTick = NULL;
+//    int sleepCnt = listSize(sleepList);  // number of threads sleeping
+//    if (sleepCnt > 0) {
+//        ret = (Thread*)listGet(sleepList,
+//                               0);  // get the first thread in sleep list
+//        earliestWakeTick = (int*)GET_FROM_MAP(Thread*, sleepThreadMap, ret);
+//        // traverse the rest of the list to find earliest thread to wake up
+//        for (int i = 1; i < sleepCnt; i++) {
+//            cur = (Thread*)listGet(sleepList, i);
+//            curWakeTick = (int*)GET_FROM_MAP(Thread*, sleepThreadMap, cur);
+//            // if we find a thread with an earlier wakeTick, update ret
+//            if (*curWakeTick < *earliestWakeTick) {
+//                ret = cur;
+//                earliestWakeTick = curWakeTick;
+//            }
+//        }
+//    }
+    if (listSize(sleepList) > 0) {
+        ret = (Thread *) listGet(sleepList, 0);
     }
     return ret;
 }
@@ -235,13 +259,13 @@ Thread* findThreadToRun() {
     bool isAttemptingLock = MAP_CONTAINS(Thread*, sharedLockAttemptMap, ret);
     if (isAttemptingLock) {
         const char* attemptLock =
-            (const char*)GET_FROM_MAP(Thread*, sharedLockAttemptMap, ret);
+                (const char*)GET_FROM_MAP(Thread*, sharedLockAttemptMap, ret);
         // if the lock of attempting is held by another thread, find the lock
         // holder
         bool isHeld = MAP_CONTAINS(const char*, sharedLockThreadMap, attemptLock);
         if (isHeld) {
             Thread* lockHolder =
-                (Thread*)GET_FROM_MAP(const char*, sharedLockThreadMap, attemptLock);
+                    (Thread*)GET_FROM_MAP(const char*, sharedLockThreadMap, attemptLock);
             // if lock holder has a lower priority, do priority donation
             if (lockHolder != NULL && lockHolder != ret &&
                 lockHolder->priority < ret->priority) {
