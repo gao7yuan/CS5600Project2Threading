@@ -13,16 +13,18 @@ void lockCreated(const char* lockId) {
 
 void lockAttempted(const char* lockId, Thread* thread) {
     // inform scheduler that this thread has attempted this lock
-    // store [thread -> attempt lock] pairs into sharedLockAttemptMap for scheduler to track
+    // store [thread -> attempt lock] pairs into sharedLockAttemptMap for
+    // scheduler to track
     PUT_IN_MAP(Thread*, sharedLockAttemptMap, thread, (void*)lockId);
 }
 
 void lockAcquired(const char* lockId, Thread* thread) {
-    // if this thread has attempted this lock before, remove the record from sharedLockAttemptMap
+    // if this thread has attempted this lock before, remove the record from
+    // sharedLockAttemptMap
     bool isAttemptingLock = MAP_CONTAINS(Thread*, sharedLockAttemptMap, thread);
     if (isAttemptingLock) {
         char* attemptedLockId =
-                (char*)GET_FROM_MAP(Thread*, sharedLockAttemptMap, thread);
+            (char*)GET_FROM_MAP(Thread*, sharedLockAttemptMap, thread);
         if (strcmp(lockId, attemptedLockId) == 0) {
             REMOVE_FROM_MAP(Thread*, sharedLockAttemptMap, thread);
         }
@@ -38,7 +40,7 @@ void lockFailed(const char* lockId, Thread* thread) {
     bool isAttemptingLock = MAP_CONTAINS(Thread*, sharedLockAttemptMap, thread);
     if (isAttemptingLock) {
         char* attemptedLockId =
-                (char*)GET_FROM_MAP(Thread*, sharedLockAttemptMap, thread);
+            (char*)GET_FROM_MAP(Thread*, sharedLockAttemptMap, thread);
         if (strcmp(lockId, attemptedLockId) == 0) {
             REMOVE_FROM_MAP(Thread*, sharedLockAttemptMap, thread);
         }
