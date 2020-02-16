@@ -110,7 +110,7 @@ thread that is holding the lock, after the lock is released, we perform priority
 in `lockReleased()` and the high-priority thread waiting for the lock jumps to the head of `readyList` and will get 
 the lock.
 
-**For bonus points**
+##For bonus points
 - Refer to the comment for function `void stopExecutingThreadForCycle();` would increment score by one :)
 - A screen shot of destroying a thread is located in this folder, `destroyThread.png`.
 - Mention the lowest priority for an equal value added to your final marks -> the lowest priority value is 1.
