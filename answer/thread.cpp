@@ -76,8 +76,7 @@ Thread* createAndSetThreadToRun(const char* name,
 
 void destroyThread(Thread* thread) {
     char line[1024];
-    sprintf(line, "[destroyThread] destroying thread with name %s\n",
-            thread->name);
+    sprintf(line, "[destroyThread] destroying thread with name %s\n", thread->name);
     verboseLog(line);
     free(thread->name);
     free(thread);
@@ -129,9 +128,8 @@ void shutdownCallback() {
 int tickSleep(int numTicks) {
     int startTick, wakeTick;
 
-    startTick =
-            getCurrentTick();  // start tick is the tick when the function is called
-    wakeTick = startTick + numTicks;  // wake tick is calculated
+    startTick = getCurrentTick(); // start tick is the tick when the function is called
+    wakeTick = startTick + numTicks; // wake tick is calculated
 
     // find current thread
     Thread* curThread = getCurrentThread();
@@ -220,7 +218,7 @@ Thread* findThreadToRun() {
     if (listSize(readyList) <= 0) {
         return ret;
     }
-    ret = (Thread*)listGet(readyList, 0);  // get first thread in ready list
+    ret = (Thread*)listGet(readyList, 0); // get first thread in ready list
     // if this thread has attempted a lock
     bool isAttemptingLock = MAP_CONTAINS(Thread*, sharedLockAttemptMap, ret);
     if (isAttemptingLock) {
@@ -235,7 +233,7 @@ Thread* findThreadToRun() {
             if (lockHolder != NULL && lockHolder != ret &&
                 lockHolder->priority < ret->priority) {
                 lockHolder->priority = ret->priority;  // priority donation
-                ret = lockHolder;  // next tick let's run this lock holder
+                ret = lockHolder; // next tick let's run this lock holder
             }
         }
     }
