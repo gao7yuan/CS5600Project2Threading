@@ -9,35 +9,52 @@
 #include "Thread.h"
 #include "thread_lock.h"
 
-const char* readyList =
-        NULL;  // stores threads that are not sleeping and ready for execution
-const char* sleepList = NULL;             // stores threads that are sleeping
-const char* sleepThreadMap = NULL;        // stores thread -> wakeTick pairs
-const char* sharedLockThreadMap = NULL;   // stores lock -> thread pairs
-const char* sharedLockAttemptMap = NULL;  // stores thread -> attempt lock pairs
-
 /*
- * Function prototypes
+ * Data structures
  */
 
-// move threads in sleep list that are supposed to wake up to ready list
+const char* readyList = NULL; // stores threads that are not sleeping and ready for execution
+const char* sleepList = NULL; // stores threads that are sleeping
+const char* sleepThreadMap = NULL; // stores [thread -> wakeTick] pairs
+const char* sharedLockThreadMap = NULL; // stores [lock -> lock-holder thread] pairs
+const char* sharedLockAttemptMap = NULL; // stores [thread -> attempt lock] pairs
+
+/*
+ * Function prototypes for helper functions
+ */
+
+/**
+ * Given a thread, insert this thread into ready list in desired order, making
+ * ready list a priority queue, while keeping the order of insertion if two
+ * threads have the same priority.
+ * @param thread - thread to insert to ready list.
+ */
+void insertToReadyList(Thread* thread);
+
+/**
+ * Given a thread, insert it into sleep list, making thread with earlier wake tick closer to head.
+ * If two threads have the same wake tick, the one with higher priority goes first.
+ * @param thread - thread to insert into sleep list.
+ */
+void insertToSleepList(Thread* thread);
+
+/**
+ * Update ready and sleep lists.
+ * Find all the threads in sleep list that should be woken up. Remove them from
+ * sleep list and sleep thread map and add them to ready list.
+ */
 void updateReadyAndSleepLists();
 
-// from sleep list, find the thread with smallest wakeTick
-Thread* findEarliestWakeUpThread();
-
-// from ready list, find the next thread to run considering their priorities
+/**
+ * Find the thread to run from ready list based on priority. Re-insert the thread to ready list for
+ * realization of Round-Robin.
+ * @return the thread to run next or NULL if ready list is empty.
+ */
 Thread* findThreadToRun();
 
-// given a thread, insert it to ready list, making ready list a priority queue
-// make sure it inserts after the last thread with same priority
-void insertToReadyList(Thread*);
-
-// given a thread, insert it to sleep list, making thread with earlier wake tick closer to head
-// if two threads have the same wake tick, the one with higher priority goes first
-void insertToSleepList(Thread*);
-
-
+/*
+ * Implementations for functions defined in Thread.student.h
+ */
 
 Thread* createAndSetThreadToRun(const char* name,
                                 void* (*func)(void*),
@@ -52,7 +69,7 @@ Thread* createAndSetThreadToRun(const char* name,
     ret->originalPriority = pri;
 
     createThread(ret);
-    //    addToList(readyList, (void*)ret);
+    // insert created thread to ready list, making ready list a priority queue
     insertToReadyList(ret);
     return ret;
 }
@@ -68,26 +85,25 @@ void destroyThread(Thread* thread) {
 
 Thread* nextThreadToRun(int currentTick) {
     char line[1024];
-    sprintf(line, "[nextThreadToRun] current tick is %d", getCurrentTick());
-    sprintf(line, "[nextThreadToRun] current ready list size is %d", listSize(readyList));
+
+    sprintf(line, "[nextThreadToRun] current tick is %d\n", getCurrentTick());
+    verboseLog(line);
+    sprintf(line, "[nextThreadToRun] current ready list size is %d\n", listSize(readyList));
+    verboseLog(line);
+
+    // move threads in sleep list that are supposed to be woken up to ready list
     updateReadyAndSleepLists();
+
     if (listSize(readyList) == 0)
         return NULL;
     Thread* ret = NULL;
-    // move threads in sleep list that are supposed to be waken up to ready list
-
 
     do {
-        int threadIndex = 0;
-        sprintf(line, "[nextThreadToRun] trying thread index %d\n",
-                threadIndex);
-        verboseLog(line);
-        // find next thread to run from ready list according to certain ordering
-        // of priority
+        // find next thread to run from ready list
         ret = findThreadToRun();
         if (ret->state == TERMINATED) {
-            sprintf(line, "[nextThreadToRun] thread %d was terminated\n",
-                    threadIndex);
+            sprintf(line, "[nextThreadToRun] thread with name %s was terminated\n",
+                    ret->name);
             verboseLog(line);
             removeFromList(readyList, ret);
             ret = NULL;
@@ -100,9 +116,9 @@ Thread* nextThreadToRun(int currentTick) {
 void initializeCallback() {
     readyList = createNewList();
     sleepList = createNewList();
-    sleepThreadMap = CREATE_MAP(Thread*);
-    sharedLockThreadMap = CREATE_MAP(const char*);  // lock -> thread
-    sharedLockAttemptMap = CREATE_MAP(Thread*);     // thread -> attempt lock
+    sleepThreadMap = CREATE_MAP(Thread*); // [thread -> wake tick]
+    sharedLockThreadMap = CREATE_MAP(const char*); // [lock -> lock-holder thread]
+    sharedLockAttemptMap = CREATE_MAP(Thread*); // [thread -> attempt lock]
 }
 
 void shutdownCallback() {
@@ -120,17 +136,12 @@ int tickSleep(int numTicks) {
     // find current thread
     Thread* curThread = getCurrentThread();
 
-    //    // stop executing until reach wake tick
-    //    while (getCurrentTick() < wakeTick) {
-    //        stopExecutingThreadForCycle();
-    //    }
-
     // remove thread from ready list
     removeFromList(readyList, (void*)curThread);
-    // add thread to sleep list
-    addToList(sleepList, (void*)curThread);
-    // add <curThread, wakeTick> to sleepThreadMap
+    // add [curThread, wakeTick] to sleepThreadMap
     PUT_IN_MAP(Thread*, sleepThreadMap, curThread, (void*)&wakeTick);
+    // add thread to sleep list
+    insertToSleepList(curThread);
 
     // stop executing
     stopExecutingThreadForCycle();
@@ -142,16 +153,15 @@ void setMyPriority(int priority) {
     getCurrentThread()->priority = priority;
 }
 
-/**
- * Given a thread, insert this thread into ready list in desired order, making
- * ready list a priority queue, while keeping the order of insertion if two
- * threads have the same priority.
- * @param thread
+/*
+ * Helper functions
  */
 
 void insertToReadyList(Thread* thread) {
     int threadIndex = 0;
-    Thread* curThread = NULL;
+    Thread* curThread = NULL; // to iterate ready list
+    // insert thread to the first thread in ready list that has a smaller priority than it
+    // this ensures threads with equal priorities are run in the order of insertion
     while (threadIndex < listSize(readyList)) {
         curThread = (Thread*)listGet(readyList, threadIndex);
         if (thread->priority > curThread->priority) {
@@ -165,8 +175,10 @@ void insertToReadyList(Thread* thread) {
 void insertToSleepList(Thread * thread) {
     int * wakeTick = (int *) GET_FROM_MAP(Thread *, sleepThreadMap, thread);
     int threadIndex = 0;
-    Thread *curThread = NULL;
+    Thread *curThread = NULL; // to iterate sleep list
     int *curWakeTick = NULL;
+    // insert thread before the first thread in sleep list with later wake tick
+    // or with equal wake tick but lower priority
     while (threadIndex < listSize(sleepList)) {
         curThread = (Thread *) listGet(sleepList, threadIndex);
         curWakeTick = (int*) GET_FROM_MAP(Thread *, sleepThreadMap, curThread);
@@ -178,76 +190,30 @@ void insertToSleepList(Thread * thread) {
     addToListAtIndex(sleepList, threadIndex, (void *) thread);
 }
 
-/**
- * Update ready and sleep lists.
- * Find all the threads in sleep list that should be waken up. Remove them from
- * sleep list and add them to ready list.
- */
-
 void updateReadyAndSleepLists() {
-    char buffer[1024];
     int sleepCnt = listSize(sleepList);
     Thread* candidate = NULL;
     int* wakeTick = NULL;
+    // always check the first thread in sleep list
+    // if wake tick smaller than current tick, remove from sleep list and sleep map and add to ready list
+    // otherwise break
     while (sleepCnt > 0) {
-        candidate = findEarliestWakeUpThread();
+        candidate = (Thread *) listGet(sleepList, 0);
         wakeTick = (int*)GET_FROM_MAP(Thread*, sleepThreadMap, candidate);
         if (*wakeTick <= getCurrentTick()) {
             // if find a thread with wake tick earlier than current tick
             // should wake up this thread
             // remove it from sleep list and sleep map and add it to ready list
             removeFromList(sleepList, (void*)candidate);
-            sprintf(buffer, "[update ready list] waking up thread %s", candidate->name);
-            //            addToList(readyList, (void*)candidate);
             insertToReadyList(candidate);
             REMOVE_FROM_MAP(Thread*, sleepThreadMap, candidate);
             sleepCnt--;
         } else {
-            // if no thread should be waken up
+            // if no thread should be woken up
             break;
         }
     }
 }
-
-/**
- * From sleepList, find the thread with the earliest wakeTick.
- * @return the thread with the earliest wakeTick or NULL if sleepList is empty.
- */
-
-Thread* findEarliestWakeUpThread() {
-    Thread* ret = NULL;  // to record the thread with earliest wake tick
-//    Thread* cur = NULL;  // to traverse sleep list
-//    int* earliestWakeTick = NULL;
-//    int* curWakeTick = NULL;
-//    int sleepCnt = listSize(sleepList);  // number of threads sleeping
-//    if (sleepCnt > 0) {
-//        ret = (Thread*)listGet(sleepList,
-//                               0);  // get the first thread in sleep list
-//        earliestWakeTick = (int*)GET_FROM_MAP(Thread*, sleepThreadMap, ret);
-//        // traverse the rest of the list to find earliest thread to wake up
-//        for (int i = 1; i < sleepCnt; i++) {
-//            cur = (Thread*)listGet(sleepList, i);
-//            curWakeTick = (int*)GET_FROM_MAP(Thread*, sleepThreadMap, cur);
-//            // if we find a thread with an earlier wakeTick, update ret
-//            if (*curWakeTick < *earliestWakeTick) {
-//                ret = cur;
-//                earliestWakeTick = curWakeTick;
-//            }
-//        }
-//    }
-    if (listSize(sleepList) > 0) {
-        ret = (Thread *) listGet(sleepList, 0);
-    }
-    return ret;
-}
-
-/**
- * Find the thread to run from ready list based on its priority. If two threads
- * have the same priority, we run the one with lower original priority since
- * this one just got priority donation and we should run it first to release the
- * lock.
- * @return the thread to run next or NULL if ready list is empty.
- */
 
 Thread* findThreadToRun() {
     Thread* ret = NULL;  // to record thread to run
@@ -260,8 +226,7 @@ Thread* findThreadToRun() {
     if (isAttemptingLock) {
         const char* attemptLock =
                 (const char*)GET_FROM_MAP(Thread*, sharedLockAttemptMap, ret);
-        // if the lock of attempting is held by another thread, find the lock
-        // holder
+        // if the lock of attempting is held by another thread, find the lock-holder
         bool isHeld = MAP_CONTAINS(const char*, sharedLockThreadMap, attemptLock);
         if (isHeld) {
             Thread* lockHolder =
@@ -274,7 +239,7 @@ Thread* findThreadToRun() {
             }
         }
     }
-    // for round-robin
+    // for round-robin, remove the next thread to run from ready list and re-insert
     removeFromList(readyList, (void*)ret);
     insertToReadyList(ret);
 
