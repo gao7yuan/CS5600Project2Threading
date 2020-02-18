@@ -46,8 +46,10 @@ void insertToSleepList(Thread* thread);
  * Update ready and sleep lists.
  * Find all the threads in sleep list that should be woken up. Remove them from
  * sleep list and sleep thread map and add them to ready list.
+ * @param currentTick - current tick at which we update the ready and sleep
+ * lists.
  */
-void updateReadyAndSleepLists();
+void updateReadyAndSleepLists(int currentTick);
 
 /**
  * Find the thread to run from ready list based on priority. Re-insert the
@@ -90,14 +92,14 @@ void destroyThread(Thread* thread) {
 Thread* nextThreadToRun(int currentTick) {
     char line[1024];
 
-    sprintf(line, "[nextThreadToRun] current tick is %d\n", getCurrentTick());
+    sprintf(line, "[nextThreadToRun] current tick is %d\n", currentTick);
     verboseLog(line);
     sprintf(line, "[nextThreadToRun] current ready list size is %d\n",
             listSize(readyList));
     verboseLog(line);
 
     // move threads in sleep list that are supposed to be woken up to ready list
-    updateReadyAndSleepLists();
+    updateReadyAndSleepLists(currentTick);
 
     if (listSize(readyList) == 0)
         return NULL;
@@ -200,7 +202,7 @@ void insertToSleepList(Thread* thread) {
     addToListAtIndex(sleepList, threadIndex, (void*)thread);
 }
 
-void updateReadyAndSleepLists() {
+void updateReadyAndSleepLists(int currentTick) {
     int sleepCnt = listSize(sleepList);
     Thread* candidate = NULL;
     int* wakeTick = NULL;
@@ -210,7 +212,7 @@ void updateReadyAndSleepLists() {
     while (sleepCnt > 0) {
         candidate = (Thread*)listGet(sleepList, 0);
         wakeTick = (int*)GET_FROM_MAP(Thread*, sleepThreadMap, candidate);
-        if (*wakeTick <= getCurrentTick()) {
+        if (*wakeTick <= currentTick) {
             // if find a thread with wake tick earlier than current tick
             // should wake up this thread
             // remove it from sleep list and sleep map and add it to ready list
